@@ -353,7 +353,7 @@ class BiEncoderTrainer(object):
                     'Epoch: %d: Step: %d/%d, loss=%f, lr=%f', epoch, data_iteration, epoch_batches, loss.item(), lr)
 
             if (i + 1) % rolling_loss_step == 0:
-                t2 = time.now()
+                t2 = time.time()
                 elapsed = t2 - t1 
                 logger.info('Train batch %d', data_iteration)
                 latest_rolling_train_av_loss = rolling_train_loss / rolling_loss_step
