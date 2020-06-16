@@ -168,8 +168,10 @@ class BiEncoderTrainer(object):
         batches = 0
         for i, samples_batch in enumerate(data_iterator.iterate_data()):
             biencoder_input = BiEncoder.create_biencoder_input(samples_batch, self.tensorizer,
-                                                               True,
-                                                               num_hard_negatives, num_other_negatives, shuffle=False)
+                                                               insert_title=True,
+                                                               num_hard_negatives=num_hard_negatives,
+                                                               num_other_negatives=num_other_negatives,
+                                                               shuffle=False)
 
             loss, correct_cnt = _do_biencoder_fwd_pass(self.biencoder, biencoder_input, self.tensorizer, args)
             total_loss += loss.item()

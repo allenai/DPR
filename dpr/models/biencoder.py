@@ -150,7 +150,13 @@ class BiEncoder(nn.Module):
                 [i for i in
                  range(current_ctxs_len + hard_negatives_start_idx, current_ctxs_len + hard_negatives_end_idx)])
 
-            question_tensors.append(tensorizer.text_to_tensor(question))
+
+            if sample.get("source_ctxs", None) is not None:
+                source_ctx = sample["source_ctxs"][0] # Only a single source ctx in a list.
+                source_ctx_tensor = tensorizer.text_to_tensor(source_ctx['text'], title=source_ctx['title'] if insert_title else None)
+                question_tensors.append(source_ctx_tensor)
+            else:
+                question_tensors.append(tensorizer.text_to_tensor(question))
 
         ctxs_tensor = torch.cat([ctx.view(1, -1) for ctx in ctx_tensors], dim=0)
         questions_tensor = torch.cat([q.view(1, -1) for q in question_tensors], dim=0)
