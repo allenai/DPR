@@ -312,6 +312,8 @@ class BiEncoderTrainer(object):
         self.biencoder.train()
         epoch_batches = train_data_iterator.max_iterations
         data_iteration = 0
+        t1 = time.time()
+
         for i, samples_batch in enumerate(train_data_iterator.iterate_data(epoch=epoch)):
 
             # to be able to resume shuffled ctx- pools
@@ -351,10 +353,14 @@ class BiEncoderTrainer(object):
                     'Epoch: %d: Step: %d/%d, loss=%f, lr=%f', epoch, data_iteration, epoch_batches, loss.item(), lr)
 
             if (i + 1) % rolling_loss_step == 0:
+                t2 = time.now()
+                elapsed = t2 - t1 
                 logger.info('Train batch %d', data_iteration)
                 latest_rolling_train_av_loss = rolling_train_loss / rolling_loss_step
                 logger.info('Avg. loss per last %d batches: %f', rolling_loss_step, latest_rolling_train_av_loss)
+                logger.info('Avg. single GPU speed per last %d batches: %f', rolling_loss_step, elapsed/rolling_loss_step)
                 rolling_train_loss = 0.0
+                t1 = t2
 
             if data_iteration % eval_step == 0:
                 logger.info('Validation: Epoch: %d Step: %d/%d', epoch, data_iteration, epoch_batches)
