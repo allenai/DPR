@@ -15,6 +15,8 @@ def load_abstracts(abstract_path: str):
             
             for line in fin:
                 blob = json.loads(line)
+                if blob["abstract"] is None:
+                    continue
                 all_abstracts[blob["paper_id"]] = blob
 
     return all_abstracts
@@ -33,7 +35,6 @@ def sample_training_data(chunk_path: str, out_dir: str, abstracts):
             paper_id = paper["paper_id"]
 
             for chunk in paper["chunks"]:
-                
                 text = chunk["text"]
                 positive_ids = set(chunk["paper_ids"])
 
@@ -65,7 +66,6 @@ def sample_training_data(chunk_path: str, out_dir: str, abstracts):
                 if negative_abstract is None:
                     continue
 
-                
                 blob = {
                     "question": "N/A",
                     "answers": ["N/A"],
@@ -75,26 +75,25 @@ def sample_training_data(chunk_path: str, out_dir: str, abstracts):
                     }],
                     "positive_ctxs": [{
                         "title": positive_abstract["title"],
-                        "text": positive_abstract["text"],
+                        "text": positive_abstract["abstract"],
                     }],
                     "negative_ctxs": [],
                     "hard_negative_ctxs": [{
                         "title": negative_abstract["title"],
-                        "text": negative_abstract["text"],
+                        "text": negative_abstract["abstract"],
                     }]
                 }
                 data.append(blob)
-                shard += 1
+                count += 1
 
                 if count % shard_size == 0 and count != 0:
-                    with open(os.path.join(out_dir, f"{count}.json")) as out:
+                    with open(os.path.join(out_dir, f"{count}.json"), "w+") as out:
                         json.dump(data, out)
                     
-                    count = 0
                     data = []
 
     if data:
-        with open(os.path.join(out_dir, f"{count}.json")) as out:
+        with open(os.path.join(out_dir, f"{count}.json"), "w+") as out:
             json.dump(data, out)
 
 

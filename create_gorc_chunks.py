@@ -137,13 +137,16 @@ if __name__ == "__main__":
     parser.add_argument('in_dir', type=str, help="Input directory.")
     parser.add_argument('out_dir', type=str, help="Output directory.")
     parser.add_argument('--start', type=int, help="Start shard index")
-    parser.add_argument('--end', type=int, help="End shard index")
+    parser.add_argument('--end', type=int, default=None, help="End shard index")
 
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
     os.makedirs(os.path.join(args.out_dir, "abstracts"), exist_ok=True)
     os.makedirs(os.path.join(args.out_dir, "chunks"), exist_ok=True)
+
+    if args.end is None:
+        args.end = args.start + 1
 
     for i in range(args.start, args.end):
         abstract = os.path.join(args.out_dir, "abstracts", f"{i}.jsonl")
