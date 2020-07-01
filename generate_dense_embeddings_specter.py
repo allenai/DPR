@@ -104,8 +104,8 @@ def main(args):
 
     for paper in blob.values():
         s2_id = paper["paper_id"]
-        title = paper.get("title", "")
-        abstract = paper.get("abstract", "")   
+        title = paper.get("title") or ""
+        abstract = paper.get("abstract") or ""  
         rows.append((s2_id, abstract, title))
 
     data = gen_ctx_vectors(rows, encoder, tensorizer, True)
