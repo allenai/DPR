@@ -1,4 +1,4 @@
-
+from typing import Dict, Any, TextIO
 
 
 import json
@@ -13,15 +13,13 @@ segmenter = pysbd.Segmenter(language="en", clean=False, char_span=True)
 
 def paper_iterator(directory: str, shard: int):
 
-    metadata_path = os.path.join(directory, "metadata", f"{shard}.tsv")
-    paper_path = os.path.join(directory, "papers", f"{shard}.jsonl.gz")
+    metadata_path = os.path.join(directory, "metadata", f"metadata_{shard}.jsonl")
+    paper_path = os.path.join(directory, "pdf_parses", f"pdf_parses_{shard}.jsonl")
 
-    with open(metadata_path, "r") as metadata_f, gzip.open(paper_path, "rt") as f:
-        first = metadata_f.readline().strip("\n").split("\t")
-        for line in f:
-            values = metadata_f.readline().strip("\n").split("\t")
-            metadata = {k: v if v != "" else None for k, v in zip(first, values)}
-            yield json.loads(line), metadata
+    with open(metadata_path, "r") as metadata_f, open(paper_path, "rt") as f:
+        for paper, meta in zip(f, metadata_f):
+
+            yield json.loads(paper), json.loads(meta)
 
 
 def linked_refs_in_chunk(cite_spans, refs_with_links):
@@ -32,28 +30,33 @@ def linked_refs_in_chunk(cite_spans, refs_with_links):
 def create_abstract(paper_blob, metadata, out):
 
     # We only need to record abstracts with incoming citation edges.
-    if metadata["inbound_citations"] == "[]":
-        return
-    if metadata["has_grobid"] == "False":
-        return
-    if metadata["has_grobid_text"] == "False":
+    if not metadata["has_inbound_citations"]:
         return
 
-    if not paper_blob["grobid_parse"]["abstract"] and not metadata["has_gold_abs"] == "True":
+    if not paper_blob["abstract"] and metadata["abstract"] is None:
         return
 
-    if metadata["has_gold_abs"]:
-        abstract = paper_blob["metadata"]["abstract"]
+    if metadata["abstract"]:
+        abstract = metadata["abstract"]
     else:
-        abstract = paper_blob["grobid_parse"]["abstract"][0]["text"]
+        abstract = paper_blob["abstract"][0]["text"]
 
     blob = {
         "paper_id": paper_blob["paper_id"],
-        "title": paper_blob["metadata"]["title"],
+        "title": metadata["title"],
         "abstract": abstract
     }
     out.write(json.dumps(blob) + "\n")
 
+
+def parse_paper_abstract(blob):
+    chunks = []
+    for chunk in blob:
+        chunks.append({
+            "text": chunk["text"],
+            "paper_ids": [],
+        })
+    return chunks
 
 def parse_paper_part(blob, refs_with_links):
 
@@ -93,35 +96,52 @@ def parse_paper_part(blob, refs_with_links):
                 chunks.append({
                     "text": context,
                     "paper_ids": paper_ids_for_window,
+                    "section": chunk["section"]
                     })
 
             i += 1
 
     return chunks
 
-def create_chunks(paper_blob, metadata, out = None):
-    if metadata["has_grobid"] == "False":
+def create_chunks(
+    paper_blob: Any,
+    metadata: Dict[str, str],
+    out: TextIO = None,
+    filter_by: str = None,
+    abstract_only: bool = False):
+
+    if not metadata["has_pdf_parse"]:
         return
-    if metadata["has_grobid_text"] == "False":
-        return
-    if int(metadata["grobid_num_linked_bibs"] or 0) < 4:
-        return
+
+    if filter_by is not None:
+        if filter_by == "pubmed" and metadata["pmid"] is None:
+            return
+        if filter_by == "acl" and metadata["acl_id"] is None:
+            return
+        if filter_by == "arxiv" and metadata["arxiv_id"] is None:
+            return
+        raise ValueError("Unknown filter string. Valid values are [arxiv, pubmed, acl]")
+
 
     paper_id = paper_blob["paper_id"]
-    paper_title = paper_blob["metadata"]["title"]
-    grobid_parse = paper_blob["grobid_parse"]
+    paper_title = metadata["title"]
 
     refs_with_links = {
-            ref: content["links"]
-            for ref, content in grobid_parse["bib_entries"].items()
-            if content["links"]
+            ref: content["link"]
+            for ref, content in paper_blob["bib_entries"].items()
+            if content["link"]
         }
 
     chunks = []
-    chunks.extend(parse_paper_part(grobid_parse["abstract"], refs_with_links))
-    chunks.extend(parse_paper_part(grobid_parse["body_text"], refs_with_links))
+    if abstract_only:
+        chunks.extend(parse_paper_abstract(paper_blob["abstract"]))
+    else:
+        chunks.extend(parse_paper_part(paper_blob["abstract"], refs_with_links))
 
-    if out is not None:
+        chunks.extend(parse_paper_part(paper_blob["body_text"], refs_with_links))
+
+
+    if out is not None and chunks:
         blob = {
             "title": paper_title,
             "paper_id": paper_id,
@@ -136,8 +156,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('in_dir', type=str, help="Input directory.")
     parser.add_argument('out_dir', type=str, help="Output directory.")
-    parser.add_argument('--start', type=int, help="Start shard index")
+    parser.add_argument('--start', type=int, help="Start shard index", required=True)
     parser.add_argument('--end', type=int, default=None, help="End shard index")
+    parser.add_argument('--filter', type=str, default=None, help="Filter to arxiv or pubmed only.")
+    parser.add_argument('--abstracts', action="store_true", help="Only extract abstracts")
 
     args = parser.parse_args()
 
@@ -145,6 +167,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(args.out_dir, "abstracts"), exist_ok=True)
     os.makedirs(os.path.join(args.out_dir, "chunks"), exist_ok=True)
 
+    # If end is not passed, we are only processing a single chunk.
     if args.end is None:
         args.end = args.start + 1
 
@@ -155,6 +178,10 @@ if __name__ == "__main__":
             print(f"Found existing chunks and abstracts for shard {i}. Skipping.")
             continue
         with open(abstract, "w+") as f, open(chunks, "w+") as f2:
+
+            i = 0
             for (paper, meta) in paper_iterator(args.in_dir, i):
-                create_chunks(paper, meta, f2)
+                create_chunks(paper, meta, f2, args.filter, args.abstracts)
                 create_abstract(paper, meta, f)
+                i+=1
+                if i == 200: break
